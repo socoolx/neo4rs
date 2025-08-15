@@ -36,6 +36,9 @@ pub enum Error {
     #[error("SSL connection error: {0}")]
     SSLConnectionError(String),
 
+    #[error("error: {0}")]
+    CommonError(String),
+
     #[cfg(feature = "unstable-bolt-protocol-impl-v2")]
     #[error("The connection has been closed [{}]: {}", _0.code, _0.message)]
     ConnectionClosed(crate::bolt::Failure),

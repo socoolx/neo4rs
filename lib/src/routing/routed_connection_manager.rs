@@ -51,12 +51,11 @@ impl RoutedConnectionManager {
 
         // We request the list of servers for the selected db.
         // If db is None, we will fetch the default database from the router.
-        // If something goes wrong, we will return an empty list of servers: this will cause
-        // the connection manager to fail.
+        // If something goes wrong, keep the original routing table error.
         let servers = self
             .connection_registry
             .servers(db.clone(), imp_user.clone(), bookmarks, router)
-            .await;
+            .await?;
 
         loop {
             let selected_server = match op {
