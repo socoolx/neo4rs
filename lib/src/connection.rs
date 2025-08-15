@@ -530,7 +530,11 @@ impl ConnectionInfo {
                 let cert_key = File::open(&mutual.client_key)?;
                 let mut key_reader = BufReader::new(cert_key);
                 let keys = rustls_pemfile::private_key(&mut key_reader);
-                let keys = keys?.unwrap();
+                let keys = match keys? {
+                    Some(k) => k,
+                    None => return Err(Error::SSLConnectionError("error client key".to_string())),
+                };
+
                 if mutual.cert_file.is_some() {
                     let root_cert_file = File::open(mutual.cert_file.as_ref().unwrap())?;
                     let mut root_reader = BufReader::new(root_cert_file);
@@ -539,7 +543,7 @@ impl ConnectionInfo {
                     builder
                         .with_root_certificates(root_cert_store)
                         .with_client_auth_cert(cert_certs.collect(), keys)
-                        .map_err(|_e| Error::ConnectionError)?
+                        .map_err(|e| Error::SSLConnectionError(e.to_string()))?
                 } else if mutual.validation {
                     let native_certs = rustls_native_certs::load_native_certs();
                     if !native_certs.errors.is_empty() {
@@ -552,13 +556,13 @@ impl ConnectionInfo {
                     builder
                         .with_root_certificates(root_cert_store)
                         .with_client_auth_cert(cert_certs.collect(), keys)
-                        .map_err(|_e| Error::ConnectionError)?
+                        .map_err(|e| Error::SSLConnectionError(e.to_string()))?
                 } else {
                     builder
                         .dangerous()
                         .with_custom_certificate_verifier(Arc::new(NoCertificateVerification))
                         .with_client_auth_cert(cert_certs.collect(), keys)
-                        .map_err(|_e| Error::ConnectionError)?
+                        .map_err(|e| Error::SSLConnectionError(e.to_string()))?
                 }
             }
         };
