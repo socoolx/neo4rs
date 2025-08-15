@@ -68,7 +68,7 @@ impl ConnectionRegistry {
         imp_user: Option<ImpersonateUser>,
         bookmarks: &[String],
         router: Option<ConnectionPool>,
-    ) -> Vec<BoltServer> {
+    ) -> Result<Vec<BoltServer>, Error> {
         if let Some(db_name) = db.as_deref() {
             if let Some(table) = self.databases.get(db_name) {
                 if table.is_expired() {
@@ -81,15 +81,15 @@ impl ConnectionRegistry {
                             let database_table: DatabaseTable = new_table.into();
                             let servers = database_table.resolve();
                             debug!("Routing table for database {db_name} refreshed");
-                            servers
+                            Ok(servers)
                         }
                         Err(e) => {
                             error!("Failed to refresh routing table for database {db_name}: {e}");
-                            vec![]
+                            Err(e)
                         }
                     }
                 } else {
-                    table.resolve()
+                    Ok(table.resolve())
                 }
             } else {
                 match self
@@ -100,11 +100,11 @@ impl ConnectionRegistry {
                         let database_table: DatabaseTable = new_table.into();
                         let servers = database_table.resolve();
                         debug!("Routing table for database {db_name} refreshed");
-                        servers
+                        Ok(servers)
                     }
                     Err(e) => {
                         error!("Failed to refresh routing table for database {db_name}: {e}");
-                        vec![]
+                        Err(e)
                     }
                 }
             }
@@ -117,11 +117,11 @@ impl ConnectionRegistry {
                     let db_name = new_table.db.as_deref().unwrap_or("");
                     debug!("Routing table for database {db_name} refreshed");
                     let database_table: DatabaseTable = new_table.into();
-                    database_table.resolve()
+                    Ok(database_table.resolve())
                 }
                 Err(e) => {
                     error!("Failed to refresh routing table for database default: {e}");
-                    vec![]
+                    Err(e)
                 }
             }
         }
@@ -304,7 +304,7 @@ mod tests {
         ));
 
         let db = Some(Database::from("neo4j"));
-        let servers = registry.servers(None, None, &[], None).await;
+        let servers = registry.servers(None, None, &[], None).await.unwrap();
         assert_eq!(servers.len(), 5);
         assert_eq!(registry.pool_registry.keys().len(), 3);
         registry.mark_unavailable(&BoltServer {
@@ -312,7 +312,7 @@ mod tests {
             port: 7687,
             role: "WRITE".to_string(),
         });
-        let servers = registry.servers(db, None, &[], None).await;
+        let servers = registry.servers(db, None, &[], None).await.unwrap();
         assert_eq!(servers.len(), 3);
         assert_eq!(registry.pool_registry.keys().len(), 2);
     }
@@ -407,13 +407,19 @@ mod tests {
         let db1 = Some(Database::from("db1"));
         let db2 = Some(Database::from("db2"));
 
-        let servers = registry.servers(None, None, &[], None).await;
+        let servers = registry.servers(None, None, &[], None).await.unwrap();
         assert_eq!(servers.len(), 5);
 
-        let servers = registry.servers(db1.clone(), None, &[], None).await;
+        let servers = registry
+            .servers(db1.clone(), None, &[], None)
+            .await
+            .unwrap();
         assert_eq!(servers.len(), 5);
 
-        let servers = registry.servers(db2.clone(), None, &[], None).await;
+        let servers = registry
+            .servers(db2.clone(), None, &[], None)
+            .await
+            .unwrap();
         assert_eq!(servers.len(), 5);
 
         assert_eq!(registry.pool_registry.keys().len(), 9);
@@ -424,11 +430,11 @@ mod tests {
             role: "READ".to_string(),
         });
 
-        let servers = registry.servers(db, None, &[], None).await;
+        let servers = registry.servers(db, None, &[], None).await.unwrap();
         assert_eq!(servers.len(), 4);
-        let servers = registry.servers(db1, None, &[], None).await;
+        let servers = registry.servers(db1, None, &[], None).await.unwrap();
         assert_eq!(servers.len(), 4);
-        let servers = registry.servers(db2, None, &[], None).await;
+        let servers = registry.servers(db2, None, &[], None).await.unwrap();
         assert_eq!(servers.len(), 5);
         assert_eq!(registry.pool_registry.keys().len(), 8);
     }
