@@ -18,6 +18,7 @@ rust-version = "1.81"
 [features]
 json = ["serde_json"]
 uuid = ["dep:uuid"]
+tlcp = ["dep:tongsuo", "dep:tokio-tongsuo"]
 unstable-v1 = ["unstable-bolt-protocol-impl-v2", "unstable-result-summary"]
 unstable-serde-packstream-format = []
 unstable-result-summary = ["unstable-serde-packstream-format"]
@@ -45,6 +46,8 @@ serde = { version = "1.0.185", features = ["derive"] }                     # TOD
 serde_json = { version = "1.0.0", optional = true }
 thiserror = "2.0.0"
 time = { version = "0.3.22", optional = true }
+tongsuo = { version = "0.10.62", optional = true }
+tokio-tongsuo = { version = "0.6.5", optional = true }
 url = "2.0.0"
 uuid = { version = "1.18.1", features = ["serde", "v4"], optional = true }
 

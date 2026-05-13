@@ -32,7 +32,7 @@ type BoxedSummary = ();
 #[must_use = "Results must be streamed through with `next` in order to execute the query"]
 pub struct RowStream {
     qid: i64,
-    fields: BoltList,
+    pub fields: BoltList,
     #[cfg(feature = "unstable-bolt-protocol-impl-v2")]
     available_after: i64,
     state: State,
@@ -65,7 +65,7 @@ impl RowStream {
 /// when the stream is dropped.
 #[must_use = "Results must be streamed through with `next` in order to execute the query"]
 pub struct DetachedRowStream {
-    stream: RowStream,
+    pub stream: RowStream,
     connection: ManagedConnection,
 }
 
