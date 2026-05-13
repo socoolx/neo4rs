@@ -6,6 +6,7 @@ pub enum ConnectionTLSConfig {
     ClientCACertificate(ClientCertificate),
     NoSSLValidation,
     MutualTLS(MutualTLS),
+    Tlcp(TlcpConfig),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -42,6 +43,42 @@ impl MutualTLS {
             client_key: client_key.as_ref().to_path_buf(),
         }
     }
+    pub fn with_no_validation(&self) -> Self {
+        Self {
+            validation: false,
+            ..self.clone()
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct TlcpConfig {
+    pub(crate) validation: bool,
+    pub(crate) ca_cert: Option<PathBuf>,
+    pub(crate) sign_cert: Option<PathBuf>,
+    pub(crate) sign_key: Option<PathBuf>,
+    pub(crate) enc_cert: Option<PathBuf>,
+    pub(crate) enc_key: Option<PathBuf>,
+}
+
+impl TlcpConfig {
+    pub fn new(
+        ca_cert: Option<impl AsRef<Path>>,
+        sign_cert: Option<impl AsRef<Path>>,
+        sign_key: Option<impl AsRef<Path>>,
+        enc_cert: Option<impl AsRef<Path>>,
+        enc_key: Option<impl AsRef<Path>>,
+    ) -> Self {
+        TlcpConfig {
+            validation: true,
+            ca_cert: ca_cert.map(|p| p.as_ref().to_path_buf()),
+            sign_cert: sign_cert.map(|p| p.as_ref().to_path_buf()),
+            sign_key: sign_key.map(|p| p.as_ref().to_path_buf()),
+            enc_cert: enc_cert.map(|p| p.as_ref().to_path_buf()),
+            enc_key: enc_key.map(|p| p.as_ref().to_path_buf()),
+        }
+    }
+
     pub fn with_no_validation(&self) -> Self {
         Self {
             validation: false,

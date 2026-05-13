@@ -1,4 +1,4 @@
-use crate::auth::{ClientCertificate, ConnectionTLSConfig, MutualTLS};
+use crate::auth::{ClientCertificate, ConnectionTLSConfig, MutualTLS, TlcpConfig};
 use crate::errors::{Error, Result};
 #[cfg(feature = "unstable-bolt-protocol-impl-v2")]
 use serde::{Deserialize, Deserializer, Serialize};
@@ -287,6 +287,73 @@ impl ConfigBuilder {
         self
     }
 
+    /// A CA certificate to use to validate a TLCP server certificate.
+    pub fn with_tlcp_validation(mut self, ca_cert: impl AsRef<Path>) -> Self {
+        self.tls_config = ConnectionTLSConfig::Tlcp(TlcpConfig::new(
+            Some(ca_cert),
+            None::<&Path>,
+            None::<&Path>,
+            None::<&Path>,
+            None::<&Path>,
+        ));
+        self
+    }
+
+    /// Configure TLCP with client signing and encryption certificates.
+    pub fn with_mutual_tlcp_validation(
+        mut self,
+        ca_cert: Option<impl AsRef<Path>>,
+        sign_cert: impl AsRef<Path>,
+        sign_key: impl AsRef<Path>,
+        enc_cert: impl AsRef<Path>,
+        enc_key: impl AsRef<Path>,
+    ) -> Self {
+        self.tls_config = ConnectionTLSConfig::Tlcp(TlcpConfig::new(
+            ca_cert,
+            Some(sign_cert),
+            Some(sign_key),
+            Some(enc_cert),
+            Some(enc_key),
+        ));
+        self
+    }
+
+    /// Configure TLCP client certificates without validating the server certificate.
+    pub fn with_mutual_tlcp_no_validation(
+        mut self,
+        sign_cert: impl AsRef<Path>,
+        sign_key: impl AsRef<Path>,
+        enc_cert: impl AsRef<Path>,
+        enc_key: impl AsRef<Path>,
+    ) -> Self {
+        self.tls_config = ConnectionTLSConfig::Tlcp(
+            TlcpConfig::new(
+                None::<&Path>,
+                Some(sign_cert),
+                Some(sign_key),
+                Some(enc_cert),
+                Some(enc_key),
+            )
+            .with_no_validation(),
+        );
+        self
+    }
+
+    /// Skip TLCP server certificate validation. This is only intended for self-signed test setups.
+    pub fn skip_tlcp_validation(mut self) -> Self {
+        self.tls_config = ConnectionTLSConfig::Tlcp(
+            TlcpConfig::new(
+                None::<&Path>,
+                None::<&Path>,
+                None::<&Path>,
+                None::<&Path>,
+                None::<&Path>,
+            )
+            .with_no_validation(),
+        );
+        self
+    }
+
     pub fn build(self) -> Result<Config> {
         if let (Some(uri), Some(user), Some(password)) = (self.uri, self.user, self.password) {
             Ok(Config {
@@ -443,6 +510,33 @@ mod tests {
             .unwrap();
         assert_eq!(config.idle_timeout, Some(Duration::from_secs(600)));
         assert_eq!(config.max_lifetime, Some(Duration::from_secs(1800)));
+    }
+
+    #[test]
+    fn should_build_with_tlcp_config() {
+        let config = ConfigBuilder::default()
+            .uri("127.0.0.1:7687")
+            .user("some_user")
+            .password("some_password")
+            .with_mutual_tlcp_validation(
+                Some("ca.pem"),
+                "client-sign.pem",
+                "client-sign.key",
+                "client-enc.pem",
+                "client-enc.key",
+            )
+            .build()
+            .unwrap();
+        assert_eq!(
+            config.tls_config,
+            ConnectionTLSConfig::Tlcp(TlcpConfig::new(
+                Some("ca.pem"),
+                Some("client-sign.pem"),
+                Some("client-sign.key"),
+                Some("client-enc.pem"),
+                Some("client-enc.key")
+            ))
+        );
     }
 
     #[test]

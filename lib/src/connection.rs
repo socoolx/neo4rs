@@ -1,6 +1,7 @@
-use crate::auth::ConnectionTLSConfig;
+use crate::auth::{ConnectionTLSConfig, TlcpConfig};
 #[cfg(not(feature = "unstable-bolt-protocol-impl-v2"))]
 use crate::messages::HelloBuilder;
+use crate::scheme;
 #[cfg(feature = "unstable-bolt-protocol-impl-v2")]
 use {
     crate::bolt::{
@@ -12,6 +13,8 @@ use {
 
 #[cfg(feature = "unstable-bolt-protocol-impl-v2")]
 use crate::routing::{Route, RoutingTable};
+#[cfg(feature = "tlcp")]
+use crate::tlcp::{self, TlcpConnector};
 use crate::{
     connection::stream::ConnectionStream,
     errors::{Error, Result},
@@ -97,8 +100,14 @@ impl Connection {
         Self::configure_tcp_keepalive(&stream, opts.tcp_keepalive)?;
 
         Ok(match &opts.encryption {
-            Some((connector, domain)) => {
+            Some(Encryption::Tls(connector, domain)) => {
                 let mut stream = connector.connect(domain.clone(), stream).await?;
+                let version = Self::init(&mut stream).await?;
+                Self::create(stream, version, timeout_dur)
+            }
+            #[cfg(feature = "tlcp")]
+            Some(Encryption::Tlcp(connector)) => {
+                let mut stream = tlcp::perform_handshake(connector, stream).await?;
                 let version = Self::init(&mut stream).await?;
                 Self::create(stream, version, timeout_dur)
             }
@@ -340,7 +349,7 @@ impl Display for Routing {
 pub(crate) struct PrepareOpts {
     pub(crate) host: Host<Arc<str>>,
     pub(crate) port: u16,
-    pub(crate) encryption: Option<(TlsConnector, ServerName<'static>)>,
+    pub(crate) encryption: Option<Encryption>,
     pub(crate) connection_timeout: Duration,
     pub(crate) tcp_keepalive: Option<Duration>,
 }
@@ -352,6 +361,23 @@ impl Debug for PrepareOpts {
             .field("port", &self.port)
             .field("encryption", &self.encryption.is_some())
             .finish()
+    }
+}
+
+#[derive(Clone)]
+pub(crate) enum Encryption {
+    Tls(TlsConnector, ServerName<'static>),
+    #[cfg(feature = "tlcp")]
+    Tlcp(TlcpConnector),
+}
+
+impl Debug for Encryption {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Encryption::Tls(_, _) => f.write_str("Tls"),
+            #[cfg(feature = "tlcp")]
+            Encryption::Tlcp(_) => f.write_str("Tlcp"),
+        }
     }
 }
 
@@ -425,20 +451,41 @@ impl ConnectionInfo {
     ) -> Result<Self> {
         let mut url = NeoUrl::parse(uri)?;
 
-        let (routing, encryption, validation) = match url.scheme() {
-            "bolt" | "" => (false, false, false),
-            "bolt+s" => (false, true, true),
-            "bolt+ssc" => (false, true, false),
-            "neo4j" => (true, false, false),
-            "neo4j+s" => (true, true, true),
-            "neo4j+ssc" => (true, true, false),
-            otherwise => return Err(Error::UnsupportedScheme(otherwise.to_owned())),
-        };
+        let info = scheme::parse(url.scheme())?;
+        let (routing, encryption, validation, tlcp) =
+            (info.routing, info.encryption, info.validation, info.tlcp);
+
+        // 在 scheme 解析阶段就把"未启用 tlcp feature 但用了国密 scheme"
+        // 的情况拦下来，避免后续走到 connector 阶段才报含糊的错。
+        #[cfg(not(feature = "tlcp"))]
+        if tlcp {
+            return Err(Error::UnsupportedScheme(format!(
+                "{} (TLCP support is not enabled in this build; rebuild with the `tlcp` feature)",
+                url.scheme()
+            )));
+        }
 
         let encryption = encryption
             .then(|| {
                 // do not apply validation if using a self-signed certificate,as the documentation suggests
-                let config = if !validation {
+                let config = if tlcp {
+                    match (validation, tls_config) {
+                        (false, ConnectionTLSConfig::Tlcp(tlcp)) => {
+                            ConnectionTLSConfig::Tlcp(tlcp.with_no_validation())
+                        }
+                        (false, _) => ConnectionTLSConfig::Tlcp(
+                            TlcpConfig::new(
+                                None::<&std::path::Path>,
+                                None::<&std::path::Path>,
+                                None::<&std::path::Path>,
+                                None::<&std::path::Path>,
+                                None::<&std::path::Path>,
+                            )
+                            .with_no_validation(),
+                        ),
+                        (true, config) => config.clone(),
+                    }
+                } else if !validation {
                     match tls_config {
                         ConnectionTLSConfig::MutualTLS(mtls) => {
                             ConnectionTLSConfig::MutualTLS(mtls.with_no_validation())
@@ -448,7 +495,21 @@ impl ConnectionInfo {
                 } else {
                     tls_config.clone()
                 };
-                Self::tls_connector(url.host(), &config)
+                #[cfg(feature = "tlcp")]
+                {
+                    if tlcp {
+                        tlcp::build_connector(url.host(), &config).map(Encryption::Tlcp)
+                    } else {
+                        Self::tls_connector(url.host(), &config)
+                    }
+                }
+                #[cfg(not(feature = "tlcp"))]
+                {
+                    // 在未启用 tlcp feature 的构建中，`tlcp` 的真值在前面的
+                    // 早期校验已经被强制为 false，所以这里只可能走 TLS 分支。
+                    debug_assert!(!tlcp);
+                    Self::tls_connector(url.host(), &config)
+                }
             })
             .transpose()?;
 
@@ -488,10 +549,7 @@ impl ConnectionInfo {
         Ok(Self { prepare, init })
     }
 
-    fn tls_connector(
-        host: Host<&str>,
-        tls_config: &ConnectionTLSConfig,
-    ) -> Result<(TlsConnector, ServerName<'static>)> {
+    fn tls_connector(host: Host<&str>, tls_config: &ConnectionTLSConfig) -> Result<Encryption> {
         let mut root_cert_store = RootCertStore::empty();
 
         let builder = ClientConfig::builder();
@@ -565,6 +623,11 @@ impl ConnectionInfo {
                         .map_err(|e| Error::SSLConnectionError(e.to_string()))?
                 }
             }
+            ConnectionTLSConfig::Tlcp(_) => {
+                return Err(Error::SSLConnectionError(
+                    "TLCP config cannot be used with a TLS scheme".to_string(),
+                ));
+            }
         };
 
         let config = Arc::new(config);
@@ -577,7 +640,7 @@ impl ConnectionInfo {
             Host::Ipv6(ip) => ServerName::IpAddress(IpAddr::V6(Ipv6Addr::from(ip))),
         };
 
-        Ok((connector, domain))
+        Ok(Encryption::Tls(connector, domain))
     }
 }
 
@@ -654,7 +717,21 @@ mod stream {
         net::TcpStream,
     };
     use tokio_rustls::client::TlsStream;
+    #[cfg(feature = "tlcp")]
+    use tokio_tongsuo::SslStream;
 
+    #[cfg(feature = "tlcp")]
+    pin_project! {
+        #[project = ConnectionStreamProj]
+        #[derive(Debug)]
+        pub(super) enum ConnectionStream {
+            Unencrypted { #[pin] stream: TcpStream },
+            Encrypted { #[pin] stream: TlsStream<TcpStream> },
+            Tlcp { #[pin] stream: SslStream<TcpStream> },
+        }
+    }
+
+    #[cfg(not(feature = "tlcp"))]
     pin_project! {
         #[project = ConnectionStreamProj]
         #[derive(Debug)]
@@ -676,6 +753,13 @@ mod stream {
         }
     }
 
+    #[cfg(feature = "tlcp")]
+    impl From<SslStream<TcpStream>> for ConnectionStream {
+        fn from(stream: SslStream<TcpStream>) -> Self {
+            ConnectionStream::Tlcp { stream }
+        }
+    }
+
     impl AsyncRead for ConnectionStream {
         fn poll_read(
             self: std::pin::Pin<&mut Self>,
@@ -685,6 +769,8 @@ mod stream {
             match self.project() {
                 ConnectionStreamProj::Unencrypted { stream } => stream.poll_read(cx, buf),
                 ConnectionStreamProj::Encrypted { stream } => stream.poll_read(cx, buf),
+                #[cfg(feature = "tlcp")]
+                ConnectionStreamProj::Tlcp { stream } => stream.poll_read(cx, buf),
             }
         }
     }
@@ -698,6 +784,8 @@ mod stream {
             match self.project() {
                 ConnectionStreamProj::Unencrypted { stream } => stream.poll_write(cx, buf),
                 ConnectionStreamProj::Encrypted { stream } => stream.poll_write(cx, buf),
+                #[cfg(feature = "tlcp")]
+                ConnectionStreamProj::Tlcp { stream } => stream.poll_write(cx, buf),
             }
         }
 
@@ -708,6 +796,8 @@ mod stream {
             match self.project() {
                 ConnectionStreamProj::Unencrypted { stream } => stream.poll_flush(cx),
                 ConnectionStreamProj::Encrypted { stream } => stream.poll_flush(cx),
+                #[cfg(feature = "tlcp")]
+                ConnectionStreamProj::Tlcp { stream } => stream.poll_flush(cx),
             }
         }
 
@@ -718,6 +808,8 @@ mod stream {
             match self.project() {
                 ConnectionStreamProj::Unencrypted { stream } => stream.poll_shutdown(cx),
                 ConnectionStreamProj::Encrypted { stream } => stream.poll_shutdown(cx),
+                #[cfg(feature = "tlcp")]
+                ConnectionStreamProj::Tlcp { stream } => stream.poll_shutdown(cx),
             }
         }
 
@@ -731,6 +823,8 @@ mod stream {
                     stream.poll_write_vectored(cx, bufs)
                 }
                 ConnectionStreamProj::Encrypted { stream } => stream.poll_write_vectored(cx, bufs),
+                #[cfg(feature = "tlcp")]
+                ConnectionStreamProj::Tlcp { stream } => stream.poll_write_vectored(cx, bufs),
             }
         }
 
@@ -738,6 +832,8 @@ mod stream {
             match self {
                 ConnectionStream::Unencrypted { stream } => stream.is_write_vectored(),
                 ConnectionStream::Encrypted { stream } => stream.is_write_vectored(),
+                #[cfg(feature = "tlcp")]
+                ConnectionStream::Tlcp { stream } => stream.is_write_vectored(),
             }
         }
     }
@@ -793,9 +889,11 @@ impl ServerCertVerifier for NoCertificateVerification {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
     use url::Host;
 
-    use super::NeoUrl;
+    use super::{ConnectionInfo, NeoUrl};
+    use crate::auth::ConnectionTLSConfig;
 
     #[test]
     fn should_parse_uri() {
@@ -819,5 +917,42 @@ mod tests {
         assert_eq!(url.port(), 4242);
         assert_eq!(url.host(), Host::Domain("127.0.0.1"));
         assert_eq!(url.scheme(), "bolt");
+    }
+
+    #[cfg(feature = "tlcp")]
+    #[test]
+    fn should_accept_tlcp_uri_schemes() {
+        assert!(ConnectionInfo::new(
+            "bolt+gmssc://localhost:7687",
+            "user",
+            "password",
+            &ConnectionTLSConfig::None,
+            Duration::from_secs(30),
+            None,
+        )
+        .is_ok());
+        assert!(ConnectionInfo::new(
+            "bolt+cluster+gmssc://localhost:7687",
+            "user",
+            "password",
+            &ConnectionTLSConfig::None,
+            Duration::from_secs(30),
+            None,
+        )
+        .is_ok());
+    }
+
+    #[cfg(not(feature = "tlcp"))]
+    #[test]
+    fn should_reject_tlcp_uri_schemes_without_feature() {
+        assert!(ConnectionInfo::new(
+            "bolt+gmssc://localhost:7687",
+            "user",
+            "password",
+            &ConnectionTLSConfig::None,
+            Duration::from_secs(30),
+            None,
+        )
+        .is_err());
     }
 }

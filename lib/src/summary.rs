@@ -122,8 +122,8 @@ pub struct ResultSummary {
     pub r#type: Option<Type>,
     pub db: Option<String>,
     pub stats: Counters,
-    pub(crate) plan: Option<Map>,
-    pub(crate) profile: Option<Map>,
+    pub plan: Option<Map>,
+    pub profile: Option<Map>,
     pub notifications: Vec<Notification>,
 }
 

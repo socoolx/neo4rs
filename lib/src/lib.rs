@@ -507,11 +507,14 @@ mod retry;
 #[cfg(feature = "unstable-bolt-protocol-impl-v2")]
 mod routing;
 mod row;
+pub mod scheme;
 #[cfg(feature = "unstable-bolt-protocol-impl-v2")]
 mod session;
 mod stream;
 #[cfg(feature = "unstable-result-summary")]
 pub mod summary;
+#[cfg(feature = "tlcp")]
+mod tlcp;
 mod txn;
 mod types;
 #[cfg(feature = "unstable-bolt-protocol-impl-v2")]
