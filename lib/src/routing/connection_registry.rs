@@ -25,9 +25,11 @@ impl ConnectionRegistry {
         // Convert neo4j scheme to bolt scheme to create connection pools.
         // We need to use the bolt scheme since we don't want new connections to be routed.
         let scheme = match url.scheme() {
-            "neo4j" => "bolt",
-            "neo4j+s" => "bolt+s",
-            "neo4j+ssc" => "bolt+ssc",
+            "neo4j" | "bolt+cluster" => "bolt",
+            "neo4j+s" | "neo4j+ssl" | "bolt+cluster+ssl" => "bolt+ssl",
+            "neo4j+ssc" | "bolt+cluster+ssc" => "bolt+ssc",
+            "bolt+cluster+gmssl" => "bolt+gmssl",
+            "bolt+cluster+gmssc" => "bolt+gmssc",
             _ => panic!("Unsupported URL scheme: {}", url.scheme()),
         };
 
