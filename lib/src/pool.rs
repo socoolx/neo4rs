@@ -27,10 +27,31 @@ impl ConnectionManager {
         connection_timeout: Duration,
         tcp_keepalive: Option<Duration>,
     ) -> Result<Self> {
-        let info = ConnectionInfo::new(
+        Self::new_with_user_agent(
             uri,
             user,
             password,
+            "neo4rs",
+            tls_config,
+            connection_timeout,
+            tcp_keepalive,
+        )
+    }
+
+    pub fn new_with_user_agent(
+        uri: &str,
+        user: &str,
+        password: &str,
+        user_agent: &str,
+        tls_config: &ConnectionTLSConfig,
+        connection_timeout: Duration,
+        tcp_keepalive: Option<Duration>,
+    ) -> Result<Self> {
+        let info = ConnectionInfo::new_with_user_agent(
+            uri,
+            user,
+            password,
+            user_agent,
             tls_config,
             connection_timeout,
             tcp_keepalive,
@@ -76,10 +97,11 @@ impl Manager for ConnectionManager {
 }
 
 pub fn create_pool(config: &Config) -> Result<ConnectionPool> {
-    let mgr = ConnectionManager::new(
+    let mgr = ConnectionManager::new_with_user_agent(
         &config.uri,
         &config.user,
         &config.password,
+        &config.user_agent,
         &config.tls_config,
         config.connection_timeout,
         config.tcp_keepalive,

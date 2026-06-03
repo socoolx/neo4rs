@@ -385,6 +385,7 @@ impl Debug for Encryption {
 pub(crate) struct InitOpts {
     pub(crate) user: Arc<str>,
     pub(crate) password: Arc<str>,
+    pub(crate) user_agent: Arc<str>,
     pub(crate) routing: Routing,
 }
 
@@ -393,6 +394,7 @@ impl Debug for InitOpts {
         f.debug_struct("InitOpts")
             .field("user", &self.user)
             .field("password", &"***")
+            .field("user_agent", &self.user_agent)
             .field("routing", &self.routing)
             .finish()
     }
@@ -402,6 +404,7 @@ impl InitOpts {
     #[cfg(not(feature = "unstable-bolt-protocol-impl-v2"))]
     pub(crate) fn to_hello(&self, version: Version) -> BoltRequest {
         HelloBuilder::new(&*self.user, &*self.password)
+            .with_user_agent(self.user_agent.as_ref())
             .with_routing(self.routing.clone())
             .build(version)
     }
@@ -409,8 +412,11 @@ impl InitOpts {
     #[cfg(feature = "unstable-bolt-protocol-impl-v2")]
     pub(crate) fn to_hello(&self, version: Version) -> Hello<'_> {
         match self.routing {
-            Routing::No => HelloBuilder::new(&self.user, &self.password).build(version),
+            Routing::No => HelloBuilder::new(&self.user, &self.password)
+                .with_user_agent(self.user_agent.as_ref())
+                .build(version),
             Routing::Yes(ref routing) => HelloBuilder::new(&self.user, &self.password)
+                .with_user_agent(self.user_agent.as_ref())
                 .with_routing(
                     routing
                         .iter()
@@ -441,10 +447,31 @@ impl Debug for ConnectionInfo {
 }
 
 impl ConnectionInfo {
+    #[allow(dead_code)]
     pub(crate) fn new(
         uri: &str,
         user: &str,
         password: &str,
+        tls_config: &ConnectionTLSConfig,
+        connection_timeout: Duration,
+        tcp_keepalive: Option<Duration>,
+    ) -> Result<Self> {
+        Self::new_with_user_agent(
+            uri,
+            user,
+            password,
+            "neo4rs",
+            tls_config,
+            connection_timeout,
+            tcp_keepalive,
+        )
+    }
+
+    pub(crate) fn new_with_user_agent(
+        uri: &str,
+        user: &str,
+        password: &str,
+        user_agent: &str,
         tls_config: &ConnectionTLSConfig,
         connection_timeout: Duration,
         tcp_keepalive: Option<Duration>,
@@ -543,6 +570,7 @@ impl ConnectionInfo {
         let init = InitOpts {
             user: user.into(),
             password: password.into(),
+            user_agent: user_agent.into(),
             routing,
         };
 

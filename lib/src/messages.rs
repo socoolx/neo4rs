@@ -97,6 +97,13 @@ impl HelloBuilder {
         }
     }
 
+    pub fn with_user_agent(self, agent: impl Into<BoltString>) -> Self {
+        Self {
+            agent: agent.into(),
+            ..self
+        }
+    }
+
     #[cfg_attr(feature = "unstable-bolt-protocol-impl-v2", allow(deprecated))]
     pub fn build(self, version: Version) -> BoltRequest {
         let HelloBuilder {

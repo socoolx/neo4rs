@@ -128,6 +128,7 @@ pub struct Config {
     pub(crate) uri: String,
     pub(crate) user: String,
     pub(crate) password: String,
+    pub(crate) user_agent: String,
     pub(crate) max_connections: usize,
     pub(crate) db: Option<Database>,
     pub(crate) fetch_size: usize,
@@ -158,6 +159,7 @@ pub struct ConfigBuilder {
     uri: Option<String>,
     user: Option<String>,
     password: Option<String>,
+    user_agent: String,
     db: Option<Database>,
     fetch_size: usize,
     max_connections: usize,
@@ -190,6 +192,14 @@ impl ConfigBuilder {
     /// The password for authenticating with the Neo4j server.
     pub fn password(mut self, password: impl Into<String>) -> Self {
         self.password = Some(password.into());
+        self
+    }
+
+    /// The user agent sent to the server in the HELLO message.
+    ///
+    /// Defaults to `neo4rs` if not set.
+    pub fn user_agent(mut self, user_agent: impl Into<String>) -> Self {
+        self.user_agent = user_agent.into();
         self
     }
 
@@ -360,6 +370,7 @@ impl ConfigBuilder {
                 uri,
                 user,
                 password,
+                user_agent: self.user_agent,
                 fetch_size: self.fetch_size,
                 max_connections: self.max_connections,
                 db: self.db,
@@ -382,6 +393,7 @@ impl Default for ConfigBuilder {
             uri: None,
             user: None,
             password: None,
+            user_agent: "neo4rs".to_string(),
             db: None,
             max_connections: DEFAULT_MAX_CONNECTIONS,
             imp_user: None,

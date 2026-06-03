@@ -84,10 +84,11 @@ impl Graph {
     pub fn connect(config: Config) -> Result<Self> {
         #[cfg(feature = "unstable-bolt-protocol-impl-v2")]
         {
-            let info = ConnectionInfo::new(
+            let info = ConnectionInfo::new_with_user_agent(
                 &config.uri,
                 &config.user,
                 &config.password,
+                &config.user_agent,
                 &config.tls_config,
                 config.connection_timeout,
                 config.tcp_keepalive,

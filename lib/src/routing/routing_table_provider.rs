@@ -40,10 +40,11 @@ impl RoutingTableProvider for ClusterRoutingTableProvider {
         let pool = router.unwrap_or(self.pool.clone());
         let bookmarks = bookmarks.to_vec();
         Box::pin(async move {
-            let info = ConnectionInfo::new(
+            let info = ConnectionInfo::new_with_user_agent(
                 &config.uri,
                 &config.user,
                 &config.password,
+                &config.user_agent,
                 &config.tls_config,
                 config.connection_timeout,
                 config.tcp_keepalive,

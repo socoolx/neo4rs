@@ -43,6 +43,13 @@ impl<'a> HelloBuilder<'a> {
         HelloBuilder { routing, ..self }
     }
 
+    pub fn with_user_agent(self, user_agent: &'a str) -> HelloBuilder<'a> {
+        HelloBuilder {
+            user_agent,
+            ..self
+        }
+    }
+
     pub fn build(self, version: Version) -> Hello<'a> {
         let Self {
             scheme,
