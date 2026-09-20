@@ -8,7 +8,7 @@ use super::de::{impl_visitor, impl_visitor_ref, Keys, Single};
 /// The difference to [`super::Relationship`] is that an unbounded relationship
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct UnboundRelationshipRef<'de> {
-    id: u64,
+    id: i64,
     r#type: &'de str,
     pub(super) properties: Data,
     element_id: Option<&'de str>,
@@ -22,7 +22,7 @@ impl<'de> UnboundRelationshipRef<'de> {
     /// As such, if you want a public identity to use for your entities,
     /// attaching an explicit 'id' property or similar persistent
     /// and unique identifier is a better choice.
-    pub fn id(&self) -> u64 {
+    pub fn id(&self) -> i64 {
         self.id
     }
 
@@ -104,7 +104,7 @@ impl<'de> Deserialize<'de> for UnboundRelationshipRef<'de> {
 /// The difference to [`super::Relationship`] is that an unbounded relationship
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct UnboundRelationship {
-    id: u64,
+    id: i64,
     r#type: String,
     pub(super) properties: Data,
     element_id: Option<String>,
@@ -118,7 +118,7 @@ impl UnboundRelationship {
     /// As such, if you want a public identity to use for your entities,
     /// attaching an explicit 'id' property or similar persistent
     /// and unique identifier is a better choice.
-    pub fn id(&self) -> u64 {
+    pub fn id(&self) -> i64 {
         self.id
     }
 

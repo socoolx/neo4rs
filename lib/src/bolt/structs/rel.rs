@@ -10,9 +10,9 @@ use super::de::{impl_visitor, impl_visitor_ref, Keys, Single};
 /// A relationship within the graph.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RelationshipRef<'de> {
-    id: u64,
-    start_node_id: u64,
-    end_node_id: u64,
+    id: i64,
+    start_node_id: i64,
+    end_node_id: i64,
     r#type: &'de str,
     properties: Data,
     element_id: Option<&'de str>,
@@ -28,7 +28,7 @@ impl<'de> RelationshipRef<'de> {
     /// As such, if you want a public identity to use for your entities,
     /// attaching an explicit 'id' property or similar persistent
     /// and unique identifier is a better choice.
-    pub fn id(&self) -> u64 {
+    pub fn id(&self) -> i64 {
         self.id
     }
 
@@ -42,7 +42,7 @@ impl<'de> RelationshipRef<'de> {
     }
 
     /// The id of the node where this relationship starts.
-    pub fn start_node_id(&self) -> u64 {
+    pub fn start_node_id(&self) -> i64 {
         self.start_node_id
     }
 
@@ -52,7 +52,7 @@ impl<'de> RelationshipRef<'de> {
     }
 
     /// The id of the node where this relationship ends.
-    pub fn end_node_id(&self) -> u64 {
+    pub fn end_node_id(&self) -> i64 {
         self.end_node_id
     }
 
@@ -154,9 +154,9 @@ impl<'de> Deserialize<'de> for RelationshipRef<'de> {
 /// A relationship within the graph.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Relationship {
-    id: u64,
-    start_node_id: u64,
-    end_node_id: u64,
+    id: i64,
+    start_node_id: i64,
+    end_node_id: i64,
     r#type: String,
     properties: Data,
     element_id: Option<String>,
@@ -172,7 +172,7 @@ impl Relationship {
     /// As such, if you want a public identity to use for your entities,
     /// attaching an explicit 'id' property or similar persistent
     /// and unique identifier is a better choice.
-    pub fn id(&self) -> u64 {
+    pub fn id(&self) -> i64 {
         self.id
     }
 
@@ -186,7 +186,7 @@ impl Relationship {
     }
 
     /// The id of the node where this relationship starts.
-    pub fn start_node_id(&self) -> u64 {
+    pub fn start_node_id(&self) -> i64 {
         self.start_node_id
     }
 
@@ -196,7 +196,7 @@ impl Relationship {
     }
 
     /// The id of the node where this relationship ends.
-    pub fn end_node_id(&self) -> u64 {
+    pub fn end_node_id(&self) -> i64 {
         self.end_node_id
     }
 
@@ -416,6 +416,37 @@ mod tests {
 
         let actual: T = rel.into().unwrap();
         assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn deserialize_negative_ids() {
+        const ID: i64 = -7_245_592_511_043_575_021;
+        const START_ID: i64 = i64::MIN;
+        const END_ID: i64 = -1;
+
+        let mut data = Data::new(
+            bolt()
+                .structure(8, 0x52)
+                .int64(ID)
+                .int64(START_ID)
+                .int64(END_ID)
+                .tiny_string("REL")
+                .tiny_map(0)
+                .tiny_string("rel")
+                .tiny_string("start")
+                .tiny_string("end")
+                .build(),
+        );
+        let rel: RelationshipRef = from_bytes_ref(&mut data).unwrap();
+
+        assert_eq!(rel.id(), ID);
+        assert_eq!(rel.start_node_id(), START_ID);
+        assert_eq!(rel.end_node_id(), END_ID);
+
+        let rel = rel.to_owned();
+        assert_eq!(rel.id(), ID);
+        assert_eq!(rel.start_node_id(), START_ID);
+        assert_eq!(rel.end_node_id(), END_ID);
     }
 
     fn bolt_v4() -> (Bytes, Option<ElementIds<'static>>) {

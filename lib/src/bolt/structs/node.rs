@@ -7,7 +7,7 @@ use super::de::{impl_visitor, impl_visitor_ref, Keys, Single};
 /// A node within the graph.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NodeRef<'de> {
-    id: u64,
+    id: i64,
     labels: Vec<&'de str>,
     properties: Data,
     element_id: Option<&'de str>,
@@ -21,7 +21,7 @@ impl<'de> NodeRef<'de> {
     /// As such, if you want a public identity to use for your entities,
     /// attaching an explicit 'id' property or similar persistent
     /// and unique identifier is a better choice.
-    pub fn id(&self) -> u64 {
+    pub fn id(&self) -> i64 {
         self.id
     }
 
@@ -102,7 +102,7 @@ impl<'de> Deserialize<'de> for NodeRef<'de> {
 /// A node within the graph.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Node {
-    id: u64,
+    id: i64,
     labels: Vec<String>,
     properties: Data,
     element_id: Option<String>,
@@ -116,7 +116,7 @@ impl Node {
     /// As such, if you want a public identity to use for your entities,
     /// attaching an explicit 'id' property or similar persistent
     /// and unique identifier is a better choice.
-    pub fn id(&self) -> u64 {
+    pub fn id(&self) -> i64 {
         self.id
     }
 
@@ -293,6 +293,25 @@ mod tests {
 
         let actual: T = node.into().unwrap();
         assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn deserialize_negative_id() {
+        const ID: i64 = -7_245_592_511_043_575_021;
+
+        let mut data = Data::new(
+            bolt()
+                .structure(4, 0x4E)
+                .int64(ID)
+                .tiny_list(0)
+                .tiny_map(0)
+                .tiny_string("node")
+                .build(),
+        );
+        let node: NodeRef = from_bytes_ref(&mut data).unwrap();
+
+        assert_eq!(node.id(), ID);
+        assert_eq!(node.to_owned().id(), ID);
     }
 
     fn bolt_v4() -> (Bytes, Option<&'static str>) {

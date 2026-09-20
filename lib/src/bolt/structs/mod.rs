@@ -293,7 +293,7 @@ impl From<Bolt> for crate::BoltType {
         };
 
         fn conv_unrel(rel: urel::UnboundRelationship) -> BoltUnboundedRelation {
-            let id = BoltInteger::new(rel.id().try_into().unwrap());
+            let id = BoltInteger::new(rel.id());
             let typ = BoltString::from(rel.typ());
             let properties = rel.into::<Bolt>().unwrap();
             let properties = BoltType::from(properties);
@@ -332,7 +332,7 @@ impl From<Bolt> for crate::BoltType {
                     panic!("properties should be a map");
                 };
                 Self::Node(BoltNode::new(
-                    BoltInteger::new(id.try_into().unwrap()),
+                    BoltInteger::new(id),
                     BoltList::from(labels),
                     properties,
                 ))
@@ -348,9 +348,9 @@ impl From<Bolt> for crate::BoltType {
                     panic!("properties should be a map");
                 };
                 Self::Relation(BoltRelation {
-                    id: BoltInteger::new(id.try_into().unwrap()),
-                    start_node_id: BoltInteger::new(start_node_id.try_into().unwrap()),
-                    end_node_id: BoltInteger::new(end_node_id.try_into().unwrap()),
+                    id: BoltInteger::new(id),
+                    start_node_id: BoltInteger::new(start_node_id),
+                    end_node_id: BoltInteger::new(end_node_id),
                     typ,
                     properties,
                 })
@@ -436,5 +436,92 @@ impl From<Bolt> for crate::BoltType {
                 tz_id: v.timezone_identifier().into(),
             }),
         }
+    }
+}
+
+#[cfg(test)]
+mod signed_entity_id_tests {
+    use bytes::Bytes;
+
+    use crate::{
+        packstream::{bolt, from_bytes},
+        BoltType,
+    };
+
+    use super::Bolt;
+
+    const ID: i64 = -7_245_592_511_043_575_021;
+
+    fn node(id: i64, element_id: &str) -> Bytes {
+        bolt()
+            .structure(4, 0x4E)
+            .int64(id)
+            .tiny_list(0)
+            .tiny_map(0)
+            .tiny_string(element_id)
+            .build()
+    }
+
+    #[test]
+    fn converts_node_with_negative_id() {
+        let value: Bolt = from_bytes(node(ID, "node")).unwrap();
+        let value = BoltType::from(value);
+
+        let BoltType::Node(node) = value else {
+            panic!("expected node");
+        };
+        assert_eq!(node.id.value, ID);
+    }
+
+    #[test]
+    fn converts_relationship_with_negative_ids() {
+        let data = bolt()
+            .structure(8, 0x52)
+            .int64(ID)
+            .int64(i64::MIN)
+            .int64(-1)
+            .tiny_string("REL")
+            .tiny_map(0)
+            .tiny_string("rel")
+            .tiny_string("start")
+            .tiny_string("end")
+            .build();
+        let value: Bolt = from_bytes(data).unwrap();
+        let value = BoltType::from(value);
+
+        let BoltType::Relation(rel) = value else {
+            panic!("expected relationship");
+        };
+        assert_eq!(rel.id.value, ID);
+        assert_eq!(rel.start_node_id.value, i64::MIN);
+        assert_eq!(rel.end_node_id.value, -1);
+    }
+
+    #[test]
+    fn converts_path_with_negative_entity_ids() {
+        let data = bolt()
+            .structure(3, 0x50)
+            .tiny_list(2)
+            .extend(node(ID, "start"))
+            .extend(node(-1, "end"))
+            .tiny_list(1)
+            .structure(4, 0x72)
+            .int64(i64::MIN)
+            .tiny_string("REL")
+            .tiny_map(0)
+            .tiny_string("rel")
+            .tiny_list(2)
+            .tiny_int(1)
+            .tiny_int(1)
+            .build();
+        let value: Bolt = from_bytes(data).unwrap();
+        let value = BoltType::from(value);
+
+        let BoltType::Path(path) = value else {
+            panic!("expected path");
+        };
+        assert_eq!(path.nodes()[0].id.value, ID);
+        assert_eq!(path.nodes()[1].id.value, -1);
+        assert_eq!(path.rels()[0].id.value, i64::MIN);
     }
 }

@@ -37,17 +37,17 @@ impl<'de> PathRef<'de> {
     }
 
     /// Returns a reference to the [`Node`] with the given id if it is contained in this path.
-    pub fn get_node_by_id(&self, id: u64) -> Option<&NodeRef<'de>> {
+    pub fn get_node_by_id(&self, id: i64) -> Option<&NodeRef<'de>> {
         self.nodes.iter().find(|o| o.id() == id)
     }
 
     /// Returns a [`Relationship`] with the given id if it is contained in this path.
-    pub fn get_relationship_by_id(&self, id: u64) -> Option<RelationshipRef<'de>> {
+    pub fn get_relationship_by_id(&self, id: i64) -> Option<RelationshipRef<'de>> {
         self.relationships().find(|o| o.id() == id)
     }
 
     #[cfg(test)]
-    fn get_unbounded_relationship_by_id(&self, id: u64) -> Option<&UnboundRelationshipRef<'de>> {
+    fn get_unbounded_relationship_by_id(&self, id: i64) -> Option<&UnboundRelationshipRef<'de>> {
         self.rels.iter().find(|o| o.id() == id)
     }
 
@@ -358,12 +358,12 @@ impl Path {
     }
 
     /// Returns a reference to the [`Node`] with the given id if it is contained in this path.
-    pub fn get_node_by_id(&self, id: u64) -> Option<&Node> {
+    pub fn get_node_by_id(&self, id: i64) -> Option<&Node> {
         self.nodes.iter().find(|o| o.id() == id)
     }
 
     /// Returns a [`Relationship`] with the given id if it is contained in this path.
-    pub fn get_relationship_by_id(&self, id: u64) -> Option<Relationship> {
+    pub fn get_relationship_by_id(&self, id: i64) -> Option<Relationship> {
         self.relationships().find(|o| o.id() == id)
     }
 
@@ -470,6 +470,58 @@ mod tests {
                 },
             ]
         )
+    }
+
+    #[test]
+    fn deserialize_negative_entity_ids() {
+        const START_ID: i64 = -7_245_592_511_043_575_021;
+        const END_ID: i64 = -1;
+        const REL_ID: i64 = i64::MIN;
+
+        fn node(id: i64, element_id: &str) -> Bytes {
+            bolt()
+                .structure(4, 0x4E)
+                .int64(id)
+                .tiny_list(0)
+                .tiny_map(0)
+                .tiny_string(element_id)
+                .build()
+        }
+
+        let data = bolt()
+            .structure(3, 0x50)
+            .tiny_list(2)
+            .extend(node(START_ID, "start"))
+            .extend(node(END_ID, "end"))
+            .tiny_list(1)
+            .structure(4, 0x72)
+            .int64(REL_ID)
+            .tiny_string("REL")
+            .tiny_map(0)
+            .tiny_string("rel")
+            .tiny_list(2)
+            .tiny_int(1)
+            .tiny_int(1)
+            .build();
+        let mut data = Data::new(data);
+        let path: PathRef = from_bytes_ref(&mut data).unwrap();
+
+        assert_eq!(path.start().id(), START_ID);
+        assert_eq!(path.end().id(), END_ID);
+        assert_eq!(path.get_node_by_id(START_ID).unwrap().id(), START_ID);
+        assert_eq!(
+            path.get_unbounded_relationship_by_id(REL_ID).unwrap().id(),
+            REL_ID
+        );
+
+        let rel = path.get_relationship_by_id(REL_ID).unwrap();
+        assert_eq!(rel.id(), REL_ID);
+        assert_eq!(rel.start_node_id(), START_ID);
+        assert_eq!(rel.end_node_id(), END_ID);
+
+        let path = path.to_owned();
+        assert_eq!(path.get_node_by_id(START_ID).unwrap().id(), START_ID);
+        assert_eq!(path.get_relationship_by_id(REL_ID).unwrap().id(), REL_ID);
     }
 
     /// (42)-[1000]->(69)<-[1000]-(42)-[1001]->(1)
