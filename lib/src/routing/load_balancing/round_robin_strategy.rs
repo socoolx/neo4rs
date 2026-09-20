@@ -205,6 +205,7 @@ mod tests {
             uri: "neo4j://localhost:7687".to_string(),
             user: "user".to_string(),
             password: "password".to_string(),
+            user_agent: "neo4rs".to_string(),
             max_connections: 10,
             db: None,
             fetch_size: 200,
