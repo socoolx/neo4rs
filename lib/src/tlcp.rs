@@ -61,17 +61,27 @@ impl TlcpConnector {
         ssl.set_connect_state();
         match &self.host {
             Host::Domain(domain) => {
-                ssl.set_hostname(domain).map_err(|e| {
-                    Error::SSLConnectionError(format_tongsuo_error("set TLCP SNI hostname", &e))
-                })?;
-                ssl.param_mut()
-                    .set_hostflags(X509CheckFlags::NO_PARTIAL_WILDCARDS);
-                ssl.param_mut().set_host(domain).map_err(|e| {
-                    Error::SSLConnectionError(format_tongsuo_error(
-                        "set TLCP verification host",
-                        &e,
-                    ))
-                })?;
+                // Custom URL schemes can classify numeric IPv4 addresses as domains.
+                if let Ok(ip) = domain.parse::<StdIpAddr>() {
+                    ssl.param_mut().set_ip(ip).map_err(|e| {
+                        Error::SSLConnectionError(format_tongsuo_error(
+                            "set TLCP verification IP",
+                            &e,
+                        ))
+                    })?;
+                } else {
+                    ssl.set_hostname(domain).map_err(|e| {
+                        Error::SSLConnectionError(format_tongsuo_error("set TLCP SNI hostname", &e))
+                    })?;
+                    ssl.param_mut()
+                        .set_hostflags(X509CheckFlags::NO_PARTIAL_WILDCARDS);
+                    ssl.param_mut().set_host(domain).map_err(|e| {
+                        Error::SSLConnectionError(format_tongsuo_error(
+                            "set TLCP verification host",
+                            &e,
+                        ))
+                    })?;
+                }
             }
             Host::Ipv4(ip) => {
                 ssl.param_mut()
